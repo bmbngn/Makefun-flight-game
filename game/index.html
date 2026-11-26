@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cloudcutter — Island Ring Run</title>
+<style>
+  :root {
+    --hud-cyan: #8fe3ff;
+    --hud-amber: #ffb020;
+    --hud-green: #37d67a;
+    --hud-red: #ff5a4d;
+    --panel: rgba(8, 22, 38, 0.72);
+    --panel-line: rgba(143, 227, 255, 0.45);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a1626;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif; color: #eaf4fb; }
+  #game-canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  #game-canvas:active { cursor: grabbing; }
+  .hidden { display: none !important; }
+
+  /* ---- HUD ---- */
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+  .panel { position: absolute; background: var(--panel); border: 1px solid var(--panel-line);
+    border-radius: 8px; padding: 8px 12px; backdrop-filter: blur(2px); }
+  .panel .label { font-size: 10px; letter-spacing: 2px; color: var(--hud-cyan); opacity: 0.85; }
+  .panel .big { font-size: 30px; font-weight: 700; line-height: 1.05; color: #fff;
+    text-shadow: 0 0 12px rgba(143, 227, 255, 0.7); font-variant-numeric: tabular-nums; }
+  .panel .unit { font-size: 12px; color: var(--hud-cyan); margin-left: 4px; }
+  #hud-left { top: 14px; left: 14px; display: flex; gap: 10px; }
+  #hud-left .panel { position: static; min-width: 108px; }
+  #hud-compass-wrap { top: 14px; left: 50%; transform: translateX(-50%); width: 340px;
+    text-align: center; padding: 6px 0 8px; }
+  #hud-hdg { font-size: 22px; font-weight: 700; color: #fff; }
+  #hud-compass { position: relative; height: 18px; margin-top: 2px; overflow: hidden;
+    font-size: 12px; color: var(--hud-cyan); }
+  #hud-compass span { position: absolute; transform: translateX(-50%); }
+  #hud-right { top: 14px; right: 14px; display: flex; gap: 10px; }
+  #hud-right .panel { position: static; min-width: 92px; text-align: right; }
+  #hud-rings { color: var(--hud-amber); }
+  #hud-bottom-left { left: 14px; bottom: 14px; display: flex; flex-direction: column; gap: 8px; }
+  #hud-bottom-left .panel { position: static; width: 220px; }
+  .bar { height: 10px; background: rgba(255,255,255,0.14); border-radius: 5px; margin-top: 5px; overflow: hidden; }
+  .bar > div { height: 100%; border-radius: 5px; background: linear-gradient(90deg, #2f9e6e, var(--hud-green)); }
+  #hud-throttle-fill { background: linear-gradient(90deg, #1d6fae, var(--hud-cyan)); }
+  #hud-fuel-fill.low { background: linear-gradient(90deg, #c22, var(--hud-red)); }
+  .bar-row { display: flex; justify-content: space-between; align-items: baseline; }
+  .bar-row .val { font-size: 15px; font-weight: 700; }
+  #hud-attitude-wrap { left: 50%; bottom: 14px; transform: translateX(-50%); text-align: center; padding: 6px; }
+  #hud-attitude { display: block; }
+  #hud-gear { margin-top: 2px; font-size: 11px; letter-spacing: 2px; color: var(--hud-amber); }
+  #hud-gear.down { color: var(--hud-green); }
+  #hud-hint { right: 14px; bottom: 14px; font-size: 11px; line-height: 1.6; color: #cfe6f5; text-align: right; }
+  #hud-message { position: absolute; top: 88px; left: 50%; transform: translateX(-50%);
+    font-size: 20px; font-weight: 600; color: #fff; background: var(--panel);
+    border: 1px solid var(--panel-line); border-radius: 8px; padding: 8px 18px;
+    opacity: 0; transition: opacity 0.25s; white-space: nowrap; }
+  #hud-message.show { opacity: 1; }
+  #hud-stall { position: absolute; top: 46%; left: 50%; transform: translate(-50%, -50%);
+    font-size: 34px; font-weight: 800; letter-spacing: 4px; color: var(--hud-red);
+    text-shadow: 0 0 18px rgba(255, 90, 77, 0.8); opacity: 0; }
+  #hud-stall.show { opacity: 1; animation: blink 0.5s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0.25; } }
+  #hud-reticle { position: absolute; top: 50%; left: 50%; width: 10px; height: 10px;
+    transform: translate(-50%, -50%); border: 2px solid rgba(255,255,255,0.65); border-radius: 50%; }
+
+  /* ---- Screens ---- */
+  .screen { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center;
+    justify-content: center; background: rgba(5, 14, 26, 0.42); }
+  .card { width: min(620px, 92vw); background: rgba(8, 22, 38, 0.88); border: 1px solid var(--panel-line);
+    border-radius: 14px; padding: 28px 32px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+  .card h1 { font-size: 46px; letter-spacing: 6px; color: #fff;
+    text-shadow: 0 0 24px rgba(143, 227, 255, 0.8); }
+  .card h2 { font-size: 16px; letter-spacing: 4px; color: var(--hud-amber); margin: 4px 0 14px; font-weight: 600; }
+  .card p { font-size: 15px; line-height: 1.55; color: #d7e9f6; margin-bottom: 12px; }
+  .card .controls { font-size: 13px; line-height: 1.9; color: #bcd8ea; margin: 10px 0 16px;
+    columns: 2; text-align: left; }
+  .card .controls b { color: #fff; background: rgba(255,255,255,0.12); border-radius: 4px; padding: 1px 7px; }
+  .diff-row { display: flex; gap: 10px; justify-content: center; margin-bottom: 18px; }
+  .diff-btn { flex: 1; background: rgba(255,255,255,0.07); border: 1px solid var(--panel-line);
+    color: #d7e9f6; border-radius: 8px; padding: 10px 6px; cursor: pointer; font-size: 14px; }
+  .diff-btn small { display: block; font-size: 11px; color: #9dbfd6; margin-top: 3px; }
+  .diff-btn.active { border-color: var(--hud-amber); background: rgba(255, 176, 32, 0.16); color: #fff; }
+  .big-btn { background: linear-gradient(180deg, #ffb020, #f08c00); border: none; color: #231303;
+    font-size: 19px; font-weight: 800; letter-spacing: 2px; padding: 13px 42px; border-radius: 10px;
+    cursor: pointer; box-shadow: 0 6px 24px rgba(255, 176, 32, 0.45); }
+  .big-btn:hover { filter: brightness(1.08); }
+  #end-lines { margin: 14px 0 6px; text-align: left; }
+  #end-lines div { display: flex; justify-content: space-between; padding: 7px 4px;
+    border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 15px; }
+  #end-lines div span:first-child { color: #bcd8ea; }
+  #end-lines strong { color: var(--hud-amber); }
+  .tiny { font-size: 12px; color: #8fb0c6; margin-top: 14px; }
+</style>
+</head>
+<body>
+<canvas id="game-canvas"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="hud-left">
+    <div class="panel"><div class="label">AIRSPEED</div><div><span class="big" id="hud-speed">0</span><span class="unit">KT</span></div></div>
+    <div class="panel"><div class="label">ALTITUDE</div><div><span class="big" id="hud-alt">0</span><span class="unit">FT</span></div></div>
+  </div>
+  <div id="hud-compass-wrap" class="panel">
+    <div id="hud-hdg">090° E</div>
+    <div id="hud-compass"></div>
+  </div>
+  <div id="hud-right">
+    <div class="panel"><div class="label">RINGS</div><div class="big" id="hud-rings">0/8</div></div>
+    <div class="panel"><div class="label">TIME</div><div class="big" id="hud-time">0:00</div></div>
+    <div class="panel"><div class="label">SCORE</div><div class="big" id="hud-score">0</div></div>
+  </div>
+  <div id="hud-bottom-left">
+    <div class="panel">
+      <div class="bar-row"><span class="label">THROTTLE</span><span class="val" id="hud-throttle-val">0%</span></div>
+      <div class="bar"><div id="hud-throttle-fill" style="width:0%"></div></div>
+      <div class="bar-row" style="margin-top:8px"><span class="label">FUEL</span><span class="val" id="hud-fuel-val">100</span></div>
+      <div class="bar"><div id="hud-fuel-fill" style="width:100%"></div></div>
+    </div>
+  </div>
+  <div id="hud-attitude-wrap" class="panel">
+    <canvas id="hud-attitude" width="110" height="110"></canvas>
+    <div id="hud-gear" class="down">GEAR DOWN</div>
+  </div>
+  <div id="hud-hint" class="panel">W/S pitch · A/D bank · Shift/Ctrl throttle<br>Space brake · G gear · P pause · M sound<br>Drag mouse to look · Wheel zooms</div>
+  <div id="hud-message"></div>
+  <div id="hud-stall">STALL</div>
+  <div id="hud-reticle"></div>
+</div>
+
+<div id="screen-title" class="screen">
+  <div class="card">
+    <h1 id="game-title">CLOUDCUTTER</h1>
+    <h2 id="game-subtitle">ISLAND RING RUN</h2>
+    <p>Take off from runway 09, thread eight golden rings over the islands, and bring her
+       home to land — before the fuel runs out. Throttle discipline wins; the sea does not forgive.</p>
+    <div class="controls">
+      <div><b>W / S</b> pitch up / down</div>
+      <div><b>A / D</b> bank left / right</div>
+      <div><b>Shift / Ctrl</b> throttle up / down</div>
+      <div><b>Space</b> airbrake</div>
+      <div><b>G</b> landing gear</div>
+      <div><b>P</b> pause &nbsp; <b>M</b> sound</div>
+      <div><b>Mouse drag</b> look around</div>
+      <div><b>Wheel</b> zoom camera</div>
+    </div>
+    <div class="diff-row">
+      <button class="diff-btn active" data-diff="calm">Calm<small>Still air. Learn the course.</small></button>
+      <button class="diff-btn" data-diff="breezy">Breezy<small>A steady crosswind.</small></button>
+      <button class="diff-btn" data-diff="stormy">Stormy<small>Gusts from the south-west.</small></button>
+    </div>
+    <button id="btn-start" class="big-btn">START ENGINES</button>
+    <div class="tiny">Keyboard + mouse · sound starts when you do · an original game, built for this bounty</div>
+  </div>
+</div>
+
+<div id="screen-pause" class="screen hidden">
+  <div class="card">
+    <h1 style="font-size:32px">PAUSED</h1>
+    <p>The island waits. The fuel does not burn while you think.</p>
+    <button id="btn-resume" class="big-btn">RESUME</button>
+  </div>
+</div>
+
+<div id="screen-end" class="screen hidden">
+  <div class="card">
+    <h1 id="end-title" style="font-size:30px">Wheels down</h1>
+    <p id="end-sub"></p>
+    <div id="end-lines"></div>
+    <button id="btn-restart" class="big-btn">FLY AGAIN</button>
+    <div class="tiny">Press Enter to fly again</div>
+  </div>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
